@@ -1,0 +1,79 @@
+name: MyTemplate CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright browser
+        run: python -m playwright install --with-deps chromium
+
+      - name: Create reports directory
+        run: mkdir -p reports
+
+      - name: Backend tests and coverage
+        env:
+          APPNAME_ENV: test
+        run: |
+          pytest tests/ \
+            --ignore=tests/ui \
+            --cov=appname \
+            --cov-report=term-missing \
+            --cov-report=xml:reports/coverage.xml \
+            --cov-report=html:reports/coverage-html \
+            --junitxml=reports/unit-junit.xml
+
+      - name: Start application
+        env:
+          APPNAME_ENV: dev
+        run: |
+          python manage.py resetdb
+          nohup python -m flask --app manage run --no-debugger --no-reload > reports/server.log 2>&1 &
+          for i in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:5000/ > /dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl --fail http://127.0.0.1:5000/
+
+      - name: UI tests
+        env:
+          BASE_URL: http://127.0.0.1:5000
+        run: |
+          pytest tests/ui/ \
+            --junitxml=reports/ui-junit.xml \
+            --tracing=retain-on-failure \
+            --screenshot=only-on-failure
+
+      - name: Ruff
+        run: |
+          ruff check appname/services/branding.py appname/settings.py tests/test_assessment.py tests/ui/test_landing_page.py --select E,F --ignore E501
+
+      - name: Bandit
+        run: |
+          bandit -r appname -f json -o reports/bandit.json
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-and-security-reports
+          path: reports/

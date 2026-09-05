@@ -80,8 +80,9 @@ class TestConfig(Config):
     DEBUG = True
     DEBUG_TB_INTERCEPT_REDIRECTS = False
 
-    db_file = tempfile.NamedTemporaryFile()
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///' + db_file.name
+    db_fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(db_fd)
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///' + db_path
     SQLALCHEMY_ECHO = False  # Optionally enable if you want to see database actions
     ASSETS_DEBUG = True
 
